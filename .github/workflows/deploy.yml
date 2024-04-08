@@ -1,0 +1,59 @@
+name: Deploy Swagger
+run-name: Deploy Swagger on ${{ github.ref_name }} context
+on:
+    workflow_dispatch:
+
+jobs:
+  Deploy:
+    runs-on: ubuntu-20.04
+    steps:
+
+    - name: Pull Repo
+      uses: actions/checkout@v4
+
+    - name: Development environment
+      if: ${{ github.ref_name == 'develop' }}
+      run: echo "GAR=${{ vars.ARTIFACTS_HOST }}/${{ vars.PROJECT_DEV }}" >> $GITHUB_ENV
+
+    - name: Production environment
+      if: ${{ github.ref_name == 'master' }}
+      run: echo "GAR=${{ vars.ARTIFACTS_HOST }}/${{ vars.PROJECT_PROD }}" >> $GITHUB_ENV
+
+    - name: auth dev
+      if: ${{ github.ref_name == 'develop' }}
+      uses: 'google-github-actions/auth@v1'
+      with:
+        credentials_json: '${{ secrets.gcp_credentials }}'
+
+    - name: auth prod
+      if: ${{ github.ref_name == 'master' }}
+      uses: 'google-github-actions/auth@v1'
+      with:
+        credentials_json: '${{ secrets.gcp_credentials_prod }}'
+
+    - name: GCP get credentials
+      uses: 'google-github-actions/get-gke-credentials@v1'
+      with:
+        cluster_name: 'oversonic'
+        location: 'europe-west1'
+
+    - name: Install Helm
+      run: |
+        curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+    
+    - name: Helm login dev
+      if: ${{ github.ref_name == 'develop' }}
+      run: |
+            echo '${{ secrets.gcp_credentials }}' | helm registry login -u _json_key --password-stdin \
+            https://europe-west1-docker.pkg.dev
+
+    - name: Helm login prod
+      if: ${{ github.ref_name == 'master' }}
+      run: |
+        echo '${{ secrets.gcp_credentials_prod }}' | helm registry login -u _json_key --password-stdin \
+        https://europe-west1-docker.pkg.dev
+
+    - name: Deploy Helm Chart Dev
+      if: ${{ github.ref_name == 'develop' }}
+      run: |
+        helm upgrade --install swagger . -n oversonic
